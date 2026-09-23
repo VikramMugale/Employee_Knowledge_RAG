@@ -1,11 +1,10 @@
-"""
-Document ingestion engine with SHA-256 idempotency and lifecycle state management.
-"""
+"""Document ingestion engine with SHA-256 idempotency and lifecycle state management."""
 
 import os
 from typing import List, Dict, Optional
 from backend.ingestion.models import Document, Chunk, DocumentState
 from backend.ingestion.parsers.markdown_parser import MarkdownParser
+from backend.ingestion.parsers.pdf_parser import PdfParser
 from backend.ingestion.embeddings.gemini_embeddings import GeminiEmbeddingProvider
 from backend.retrieval.vector_search import vector_retriever
 from backend.retrieval.keyword_search import keyword_retriever
@@ -16,6 +15,7 @@ from backend.guardrails.pii import pii_guardrail
 class IngestionPipeline:
     def __init__(self):
         self.markdown_parser = MarkdownParser()
+        self.pdf_parser = PdfParser()
         self.embedding_provider = GeminiEmbeddingProvider()
         self.processed_hashes: Dict[str, str] = {}
         self.documents_registry: Dict[str, Document] = {}
@@ -41,31 +41,22 @@ class IngestionPipeline:
             if chunks:
                 vector_retriever.index_chunks(chunks)
                 keyword_retriever.index_chunks(chunks)
-                logger.info(
-                    "[IDEMPOTENCY REINDEX] '%s' already ingested; re-pushed %s chunks to search indexes.",
-                    existing.title if existing else existing_doc_id,
-                    len(chunks),
-                )
-            else:
-                logger.info(
-                    "[IDEMPOTENCY SKIP] Document with hash %s already ingested (Doc ID: %s).",
-                    content_hash[:8],
-                    existing_doc_id,
-                )
             return existing
         doc_title = os.path.basename(file_path).rsplit(".", 1)[0].replace("_", " ").title()
         doc_id = f"doc_{content_hash[:12]}"
+        suffix = file_path.rsplit(".", 1)[-1].lower()
         doc = Document(
             id=doc_id,
             title=doc_title,
             file_path=file_path,
-            file_type=file_path.rsplit(".", 1)[-1],
+            file_type=suffix,
             content_hash=content_hash,
             lifecycle_state=DocumentState.PROCESSING,
             access_level=access_level,
         )
         try:
-            chunks = await self.markdown_parser.parse(
+            parser = self.pdf_parser if suffix == "pdf" else self.markdown_parser
+            chunks = await parser.parse(
                 file_path,
                 doc_id,
                 access_level=access_level,
@@ -100,11 +91,10 @@ class IngestionPipeline:
 
     async def ingest_directory(self, seed_dir: str, access_level: str = "PUBLIC_INTERNAL") -> List[Document]:
         if not os.path.exists(seed_dir):
-            logger.error(f"Seed directory not found at {seed_dir}")
             return []
         ingested: List[Document] = []
         for fname in sorted(os.listdir(seed_dir)):
-            if not fname.endswith(".md"):
+            if not fname.lower().endswith((".md", ".pdf", ".txt", ".markdown")):
                 continue
             document = await self.ingest_file(os.path.join(seed_dir, fname), access_level=access_level)
             if document:
