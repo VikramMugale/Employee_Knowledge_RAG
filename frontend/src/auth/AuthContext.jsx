@@ -1,12 +1,5 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
-import {
-  clearSession,
-  fetchMe,
-  getStoredUser,
-  getToken,
-  login as loginRequest,
-  storeSession,
-} from "../api/client.js";
+import { clearSession, fetchMe, getStoredUser, getToken, storeSession } from "../api/client.js";
 
 const AuthContext = createContext(null);
 
@@ -21,17 +14,8 @@ export function AuthProvider({ children }) {
 
   useEffect(() => {
     const token = getToken();
-    if (!token) {
-      setReady(true);
-      return;
-    }
-    fetchMe()
-      .then((profile) => {
-        setUser(profile);
-        storeSession(token, profile);
-      })
-      .catch(() => endSession())
-      .finally(() => setReady(true));
+    if (!token) { setReady(true); return; }
+    fetchMe().then((profile) => { setUser(profile); storeSession(token, profile); }).catch(() => endSession()).finally(() => setReady(true));
   }, []);
 
   useEffect(() => {
@@ -40,21 +24,19 @@ export function AuthProvider({ children }) {
     return () => window.removeEventListener("rag:unauthorized", onExpired);
   }, []);
 
-  const value = useMemo(
-    () => ({
-      user,
-      ready,
-      isAdmin: user?.role === "ADMIN",
-      async login(email, password) {
-        const session = await loginRequest(email, password);
-        storeSession(session.access_token, session.user);
-        setUser(session.user);
-        return session.user;
-      },
-      logout: endSession,
-    }),
-    [user, ready]
-  );
+  const value = useMemo(() => ({
+    user,
+    ready,
+    isAdmin: user?.role === "ADMIN",
+    async completeOAuth(accessToken) {
+      storeSession(accessToken, getStoredUser() || { id: "pending" });
+      const profile = await fetchMe();
+      storeSession(accessToken, profile);
+      setUser(profile);
+      return profile;
+    },
+    logout: endSession,
+  }), [user, ready]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
