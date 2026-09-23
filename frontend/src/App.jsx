@@ -3,6 +3,7 @@ import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { useAuth } from "./auth/AuthContext.jsx";
 import Layout from "./components/Layout.jsx";
 import LoginPage from "./pages/LoginPage.jsx";
+import OAuthCallbackPage from "./pages/OAuthCallbackPage.jsx";
 import ChatPage from "./pages/ChatPage.jsx";
 import DocumentsPage from "./pages/DocumentsPage.jsx";
 import AdminPage from "./pages/AdminPage.jsx";
@@ -50,40 +51,14 @@ function AdminOnly({ children }) {
 export default function App() {
   return (
     <Routes>
-      <Route
-        path="/login"
-        element={
-          <GuestOnly>
-            <LoginPage />
-          </GuestOnly>
-        }
-      />
-      <Route
-        element={
-          <Protected>
-            <Layout />
-          </Protected>
-        }
-      >
+      <Route path="/auth/callback" element={<OAuthCallbackPage />} />
+      <Route path="/login" element={<GuestOnly><LoginPage /></GuestOnly>} />
+      <Route element={<Protected><Layout /></Protected>}>
         <Route path="/" element={<Navigate to="/ask" replace />} />
         <Route path="/ask" element={<ChatPage />} />
-        <Route
-          path="/policies"
-          element={
-            <AdminOnly>
-              <DocumentsPage />
-            </AdminOnly>
-          }
-        />
+        <Route path="/policies" element={<AdminOnly><DocumentsPage /></AdminOnly>} />
         <Route path="/documents" element={<Navigate to="/policies" replace />} />
-        <Route
-          path="/admin"
-          element={
-            <AdminOnly>
-              <AdminPage />
-            </AdminOnly>
-          }
-        />
+        <Route path="/admin" element={<AdminOnly><AdminPage /></AdminOnly>} />
         <Route path="*" element={<NotFoundPage />} />
       </Route>
     </Routes>
