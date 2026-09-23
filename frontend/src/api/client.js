@@ -37,7 +37,6 @@ async function request(path, options = {}) {
   }
   const token = getToken();
   if (token) headers.Authorization = `Bearer ${token}`;
-
   const response = await fetch(path, { ...options, headers });
   if (response.status === 401) {
     expireSession();
@@ -51,9 +50,7 @@ async function request(path, options = {}) {
     try {
       const payload = await response.json();
       detail = payload.detail || payload.message || detail;
-    } catch {
-      /* ignore */
-    }
+    } catch {}
     throw new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
   }
   if (response.status === 204) return null;
@@ -61,10 +58,7 @@ async function request(path, options = {}) {
 }
 
 export function login(email, password) {
-  return request("/api/v1/auth/login", {
-    method: "POST",
-    body: JSON.stringify({ email, password }),
-  });
+  return request("/api/v1/auth/login", { method: "POST", body: JSON.stringify({ email, password }) });
 }
 
 export function fetchMe() {
@@ -72,10 +66,7 @@ export function fetchMe() {
 }
 
 export function sendChat(message, conversationId) {
-  return request("/api/v1/chat", {
-    method: "POST",
-    body: JSON.stringify({ message, conversation_id: conversationId }),
-  });
+  return request("/api/v1/chat", { method: "POST", body: JSON.stringify({ message, conversation_id: conversationId }) });
 }
 
 export function listDocuments() {
@@ -86,11 +77,27 @@ export function seedDocuments() {
   return request("/api/v1/documents/seed", { method: "POST" });
 }
 
-export function submitFeedback(payload) {
-  return request("/api/v1/feedback", {
+export function uploadDocument(file, accessLevel = "PUBLIC_INTERNAL", background = true) {
+  const body = new FormData();
+  body.append("file", file);
+  body.append("access_level", accessLevel);
+  body.append("background", background ? "true" : "false");
+  return request("/api/v1/documents/upload", { method: "POST", body });
+}
+
+export function getIngestJob(jobId) {
+  return request(`/api/v1/documents/jobs/${jobId}`);
+}
+
+export function runRetrievalExperiments(question, relevantChunkIds = []) {
+  return request("/api/v1/admin/evaluations/retrieval-experiments", {
     method: "POST",
-    body: JSON.stringify(payload),
+    body: JSON.stringify({ question, relevant_chunk_ids: relevantChunkIds }),
   });
+}
+
+export function submitFeedback(payload) {
+  return request("/api/v1/feedback", { method: "POST", body: JSON.stringify(payload) });
 }
 
 export function fetchAnalytics() {
@@ -126,11 +133,9 @@ export async function streamChat(message, conversationId, onEvent) {
   if (!response.ok || !response.body) {
     throw new Error("Could not stream the answer. Try again.");
   }
-
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
-
   while (true) {
     const { value, done } = await reader.read();
     if (done) break;
@@ -144,11 +149,7 @@ export async function streamChat(message, conversationId, onEvent) {
       const event = eventLine.replace("event:", "").trim();
       const raw = dataLine.replace("data:", "").trim();
       let data = raw;
-      try {
-        data = JSON.parse(raw);
-      } catch {
-        /* keep string */
-      }
+      try { data = JSON.parse(raw); } catch {}
       onEvent(event, data);
     }
   }
