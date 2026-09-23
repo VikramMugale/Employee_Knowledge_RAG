@@ -10,11 +10,10 @@ from backend.ingestion.embeddings.gemini_embeddings import GeminiEmbeddingProvid
 from backend.retrieval.vector_search import vector_retriever
 from backend.retrieval.keyword_search import keyword_retriever
 from backend.config.logging import logger
+from backend.guardrails.pii import pii_guardrail
 
 
 class IngestionPipeline:
-    """Orchestrates document parsing, hash idempotency, metadata enrichment, embedding, and indexing."""
-
     def __init__(self):
         self.markdown_parser = MarkdownParser()
         self.embedding_provider = GeminiEmbeddingProvider()
@@ -23,7 +22,6 @@ class IngestionPipeline:
         self.chunks_registry: Dict[str, List[Chunk]] = {}
 
     def compute_file_hash(self, file_path: str) -> str:
-        """Compute SHA-256 hash of a local file."""
         import hashlib
         hasher = hashlib.sha256()
         with open(file_path, "rb") as handle:
@@ -32,16 +30,10 @@ class IngestionPipeline:
         return hasher.hexdigest()
 
     async def ingest_file(self, file_path: str, access_level: str = "PUBLIC_INTERNAL") -> Optional[Document]:
-        """
-        Ingest a file with SHA-256 idempotency.
-        Parsed chunks are embedded with Gemini and written to both retrievers.
-        """
         if not os.path.exists(file_path):
             logger.error(f"Ingestion failed: File does not exist at {file_path}")
             return None
-
         content_hash = self.compute_file_hash(file_path)
-
         if content_hash in self.processed_hashes:
             existing_doc_id = self.processed_hashes[content_hash]
             existing = self.documents_registry.get(existing_doc_id)
@@ -61,10 +53,8 @@ class IngestionPipeline:
                     existing_doc_id,
                 )
             return existing
-
         doc_title = os.path.basename(file_path).rsplit(".", 1)[0].replace("_", " ").title()
         doc_id = f"doc_{content_hash[:12]}"
-
         doc = Document(
             id=doc_id,
             title=doc_title,
@@ -74,7 +64,6 @@ class IngestionPipeline:
             lifecycle_state=DocumentState.PROCESSING,
             access_level=access_level,
         )
-
         try:
             chunks = await self.markdown_parser.parse(
                 file_path,
@@ -83,23 +72,23 @@ class IngestionPipeline:
                 document_title=doc_title,
                 document_version=doc.version,
             )
-
+            for chunk in chunks:
+                pii_result = await pii_guardrail.validate(chunk.content)
+                if pii_result.sanitized_content:
+                    chunk.content = pii_result.sanitized_content
             embeddings = await self.embedding_provider.embed_texts([chunk.content for chunk in chunks])
             for chunk, embedding in zip(chunks, embeddings):
                 chunk.embedding = embedding
                 chunk.metadata.embedding_model = "text-embedding-004"
                 chunk.metadata.embedding_dimension = len(embedding)
-
             vector_retriever.index_chunks(chunks)
             keyword_retriever.index_chunks(chunks)
-
-            doc.lifecycle_state = DocumentState.INDEXED
+            doc.lifecycle_state = DocumentState.ACTIVE
             self.processed_hashes[content_hash] = doc_id
             self.documents_registry[doc_id] = doc
             self.chunks_registry[doc_id] = chunks
             from backend.db.persist import persist_document
             await persist_document(doc, chunks)
-
             logger.info(
                 f"[INGESTION SUCCESS] Ingested '{doc.title}' ({len(chunks)} chunks, state={doc.lifecycle_state.value})"
             )
@@ -110,11 +99,9 @@ class IngestionPipeline:
             raise
 
     async def ingest_directory(self, seed_dir: str, access_level: str = "PUBLIC_INTERNAL") -> List[Document]:
-        """Ingest every markdown file in a directory."""
         if not os.path.exists(seed_dir):
             logger.error(f"Seed directory not found at {seed_dir}")
             return []
-
         ingested: List[Document] = []
         for fname in sorted(os.listdir(seed_dir)):
             if not fname.endswith(".md"):

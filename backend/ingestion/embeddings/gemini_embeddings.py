@@ -16,8 +16,6 @@ def _hash_embedding(text: str, dim: int = 768) -> List[float]:
 
 
 class GeminiEmbeddingProvider(EmbeddingProvider):
-    """Uses google.genai when available; otherwise google.generativeai; otherwise hashes."""
-
     def __init__(self):
         self.api_key = settings.gemini_api_key
         self.model = settings.embedding_model or "gemini-embedding-001"
@@ -36,7 +34,10 @@ class GeminiEmbeddingProvider(EmbeddingProvider):
                 except Exception:
                     self.active = False
         if not self.active:
-            logger.warning("[EMBEDDINGS] Gemini unavailable; using hash vectors.")
+            if settings.environment == "production" and not settings.allow_hash_embeddings:
+                logger.error("[EMBEDDINGS] Gemini unavailable; hash fallback disabled in production.")
+            else:
+                logger.warning("[EMBEDDINGS] Gemini unavailable; using hash vectors (dev only).")
 
     def _embed_one(self, text: str, task_type: str) -> List[float]:
         models = [self.model, "gemini-embedding-001", "text-embedding-004"]
@@ -82,6 +83,10 @@ class GeminiEmbeddingProvider(EmbeddingProvider):
             raise last_error
         raise RuntimeError("No Gemini embedding client")
 
+    def _fallback_or_fail(self, reason: str) -> None:
+        if settings.environment == "production" and not settings.allow_hash_embeddings:
+            raise RuntimeError(f"Embedding provider unavailable in production: {reason}")
+
     async def embed_texts(self, texts: List[str]) -> List[List[float]]:
         if not texts:
             return []
@@ -89,7 +94,10 @@ class GeminiEmbeddingProvider(EmbeddingProvider):
             try:
                 return [self._embed_one(text, "retrieval_document") for text in texts]
             except Exception as exc:
-                logger.error("[EMBEDDING API ERROR] Gemini Embedding failed: %s. Using hash fallback.", exc)
+                logger.error("[EMBEDDING API ERROR] Gemini Embedding failed: %s.", exc)
+                self._fallback_or_fail(str(exc))
+        else:
+            self._fallback_or_fail("Gemini client not configured")
         return [_hash_embedding(text) for text in texts]
 
     async def embed_query(self, query: str) -> List[float]:
@@ -98,4 +106,7 @@ class GeminiEmbeddingProvider(EmbeddingProvider):
                 return self._embed_one(query, "retrieval_query")
             except Exception as exc:
                 logger.error("[EMBEDDING API ERROR] Gemini Query Embedding failed: %s.", exc)
+                self._fallback_or_fail(str(exc))
+        else:
+            self._fallback_or_fail("Gemini client not configured")
         return _hash_embedding(query)
