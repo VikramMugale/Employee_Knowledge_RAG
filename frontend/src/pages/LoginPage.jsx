@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { fetchOAuthStatus } from "../api/client.js";
+import { fetchOAuthStatus } from "../api/oauth.js";
 
 export default function LoginPage() {
   const [status, setStatus] = useState(null);
