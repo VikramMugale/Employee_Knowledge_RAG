@@ -3,13 +3,12 @@ Ingestion domain models, document lifecycle states, and chunk metadata schemas.
 """
 
 from enum import Enum
-from typing import Dict, Any, Optional, List
+from typing import Optional, List
 from datetime import datetime
 from pydantic import BaseModel, Field
 
 
 class DocumentState(str, Enum):
-    """Document lifecycle states for enterprise version control."""
     PENDING = "PENDING"
     PROCESSING = "PROCESSING"
     INDEXED = "INDEXED"
@@ -20,7 +19,6 @@ class DocumentState(str, Enum):
 
 
 class ChunkMetadata(BaseModel):
-    """Metadata schema attached to every indexed chunk."""
     document_id: str
     document_title: str
     document_version: str
@@ -35,16 +33,16 @@ class ChunkMetadata(BaseModel):
     embedding_version: str = "v1"
     embedding_dimension: int = 768
     index_version: str = "v1"
+    lifecycle_state: str = "ACTIVE"
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
 class Document(BaseModel):
-    """Domain model representing an enterprise document entity."""
     id: str
     title: str
     file_path: str
     file_type: str
-    content_hash: str  # SHA-256 content hash for idempotency
+    content_hash: str
     version: str = "2026.1"
     lifecycle_state: DocumentState = DocumentState.PENDING
     access_level: str = "PUBLIC_INTERNAL"
@@ -56,7 +54,6 @@ class Document(BaseModel):
 
 
 class Chunk(BaseModel):
-    """Domain model representing a structure-aware document chunk."""
     id: str
     document_id: str
     chunk_index: int

@@ -9,6 +9,7 @@ from backend.api.router import api_router
 from backend.api.routes.health import router as health_router
 from backend.config.settings import settings
 from backend.config.logging import logger
+from backend.api.rate_limit import InMemoryRateLimiter
 
 
 @asynccontextmanager
@@ -25,8 +26,10 @@ async def lifespan(app: FastAPI):
     vector_retriever.connect()
     keyword_retriever.connect()
     telemetry_tracer.connect()
+    from backend.ingestion.jobs import ingestion_jobs
+    ingestion_jobs.start()
     if not settings.uses_redis():
-        logger.info("[CACHE] Redis not configured; skipping cache.")
+        logger.info("[CACHE] Redis not configured and not used.")
     yield
     logger.info(f"[{settings.app_name}] Application shutting down.")
 
@@ -39,6 +42,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+app.add_middleware(InMemoryRateLimiter)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
