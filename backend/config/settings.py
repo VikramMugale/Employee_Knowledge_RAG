@@ -30,7 +30,6 @@ _load_env_file(os.path.join(os.getcwd(), ".env"))
 
 
 def neon_async_database_url(url: str) -> str:
-    """Convert a Neon/postgres URL into an asyncpg SQLAlchemy URL."""
     raw = (url or "").strip()
     if raw.startswith("postgres://"):
         raw = "postgresql://" + raw[len("postgres://"):]
@@ -50,7 +49,6 @@ def neon_async_database_url(url: str) -> str:
 
 
 class RetrievalSettings(BaseModel):
-    """Configurable hyperparameters for multi-stage hybrid retrieval."""
     vector_top_k: int = 30
     keyword_top_k: int = 30
     fusion_top_k: int = 30
@@ -58,13 +56,11 @@ class RetrievalSettings(BaseModel):
 
 
 class RerankSettings(BaseModel):
-    """Reranker configuration settings."""
     top_k: int = Field(default_factory=lambda: int(os.getenv("RERANK_TOP_K", "8")))
     model_name: str = Field(default_factory=lambda: os.getenv("RERANK_MODEL", "rerank-2.5"))
 
 
 class Settings(BaseModel):
-    """Centralized application settings."""
     app_name: str = Field(default_factory=lambda: os.getenv("APP_NAME", "Employee Knowledge RAG Platform"))
     environment: str = Field(default_factory=lambda: os.getenv("ENVIRONMENT", "development"))
     debug: bool = Field(default_factory=lambda: os.getenv("DEBUG", "false").lower() == "true")
@@ -114,6 +110,15 @@ class Settings(BaseModel):
 
     retrieval: RetrievalSettings = Field(default_factory=RetrievalSettings)
     reranking: RerankSettings = Field(default_factory=RerankSettings)
+    chunk_max_tokens: int = Field(default_factory=lambda: int(os.getenv("CHUNK_MAX_TOKENS", "550")))
+    chunk_overlap_tokens: int = Field(default_factory=lambda: int(os.getenv("CHUNK_OVERLAP_TOKENS", "80")))
+    allow_hash_embeddings: bool = Field(
+        default_factory=lambda: os.getenv("ALLOW_HASH_EMBEDDINGS", "true").lower() == "true"
+    )
+    rate_limit_per_minute: int = Field(default_factory=lambda: int(os.getenv("RATE_LIMIT_PER_MINUTE", "60")))
+    active_versions_only: bool = Field(
+        default_factory=lambda: os.getenv("ACTIVE_VERSIONS_ONLY", "true").lower() == "true"
+    )
 
     def uses_postgres(self) -> bool:
         return bool(self.database_url)
